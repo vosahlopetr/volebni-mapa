@@ -1,0 +1,4 @@
+.venv
+Volebni_okrsky_2026.geojson
+*.zip
+prepare_map.py

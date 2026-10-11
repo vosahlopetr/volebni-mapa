@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volební mapa okrsků – Senát Obvod 21 (Praha 5)</title>
+    <meta name="description" content="Vítězové a volební účast v okrscích pro Senátní obvod 21">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text-main: #c9d1d9;
+            --text-light: #ffffff;
+
+            /* Oficiální barvy kandidátů */
+            --color-sablik: #15197D;     /* ODS, KDU-ČSL, STAN */
+            --color-laska: #D02E29;      /* SEN 21 */
+            --color-broz: #312F5F;       /* ANO 2011 */
+            --color-spirov: #DB3A37;     /* SPD */
+            --color-proksanova: #DE362A; /* KSČM */
+            --color-sarapatka: #111B39;  /* ZLU SE NEUSTUPUJE */
+            --color-augustin: #0F1A31;   /* PŘÍSAHA */
+            --color-other: #6e7681;
+
+            /* Barva pro vrstvu volební účasti */
+            --color-turnout: #58a6ff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            padding: 0.8rem 1.5rem;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            z-index: 10;
+        }
+        h1 { font-size: 1.2rem; color: var(--text-light); }
+
+        /* Přepínač zobrazení (Segmented Control) */
+        .view-switch {
+            display: flex;
+            background: #0d1117;
+            padding: 3px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .view-btn {
+            background: transparent;
+            color: var(--text-main);
+            border: none;
+            padding: 6px 14px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .view-btn:hover { color: var(--text-light); }
+        .view-btn.active {
+            background: #21262d;
+            color: var(--text-light);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+
+        #map { flex: 1; width: 100%; background: #010409; }
+
+        /* Vzhled popup oken */
+        .leaflet-popup-content-wrapper {
+            background: var(--surface);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .leaflet-popup-tip { background: var(--surface); border: 1px solid var(--border); }
+        .leaflet-popup-content { margin: 12px; }
+
+        .popup-header {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: var(--text-light);
+            margin-bottom: 4px;
+        }
+        .popup-meta {
+            font-size: 0.82rem;
+            color: #8b949e;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 6px;
+            margin-bottom: 8px;
+        }
+        .popup-turnout-highlight {
+            color: var(--color-turnout);
+            font-weight: 600;
+        }
+        .popup-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 6px;
+            margin: 2px 0;
+            border-radius: 4px;
+            font-size: 0.88rem;
+        }
+        .popup-row.winner {
+            font-weight: bold;
+            color: var(--text-light);
+            border-left: 3px solid #58a6ff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Legenda */
+        .legend {
+            background: var(--surface);
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-light);
+            font-size: 0.85rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            max-width: 250px;
+        }
+        .legend strong { display: block; margin-bottom: 8px; font-size: 0.9rem; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 5px; }
+        .legend-item:last-child { margin-bottom: 0; }
+        .legend i {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            border-radius: 3px;
+            border: 1px solid rgba(255,255,255,0.3);
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <header role="banner">
+        <div>
+            <h1>Volební mapa: Obvod 21 (Praha 5)</h1>
+            <small id="subtitle" style="color:#8b949e">Vítězové jednotlivých okrsků</small>
+        </div>
+        <div class="view-switch" role="group" aria-label="Režim zobrazení mapy">
+            <button id="btn-winner" class="view-btn active" onclick="switchMode('winner')">Vítěz okrsku</button>
+            <button id="btn-turnout" class="view-btn" onclick="switchMode('turnout')">Volební účast</button>
+        </div>
+    </header>
+
+    <main id="map" role="main" aria-label="Mapa volebních okrsků"></main>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        const candidates = {
+            "1": { name: "L. Brož (ANO)", color: "#312F5F" },
+            "2": { name: "Z. Šarapatka (ZLU)", color: "#111B39" },
+            "3": { name: "V. Láska (SEN 21)", color: "#D02E29" },
+            "4": { name: "Ľ. Augustín (PŘÍSAHA)", color: "#0F1A31" },
+            "5": { name: "P. Spirov (SPD)", color: "#DB3A37" },
+            "6": { name: "R. Sáblík (SPOLU)", color: "#15197D" },
+            "7": { name: "P. Prokšanová (KSČM)", color: "#DE362A" }
+        };
+
+        const defaultColor = "#6e7681";
+        let currentMode = 'winner'; // 'winner' nebo 'turnout'
+        let geojsonLayer;
+
+        // 1. Inicializace mapy (Praha 5)
+        const map = L.map('map', { zoomControl: false }).setView([50.05, 14.32], 12);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ | Data: ČSÚ',
+            maxZoom: 16
+        }).addTo(map);
+
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        // 2. Stylování okrsku (dynamicky podle režimu)
+        function style(feature) {
+            if (currentMode === 'turnout') {
+                const ucast = feature.properties.ucast_pct || 0;
+
+                // 0 % = bez barvy (0 opacity), 50 % = 0.5 opacity (přímá lineární škála)
+                const opacity = Math.min(1.0, Math.max(0.0, ucast / 100));
+
+                return {
+                    fillColor: '#58a6ff',
+                    fillOpacity: opacity,
+                    weight: 1.2,
+                    opacity: 0.8,
+                    color: '#30363d' // Ohraničení zůstává viditelné i při nulové účasti
+                };
+            } else {
+                // Režim: Vítěz v okrsku
+                const winnerId = String(feature.properties.winner_id || "");
+                const total = feature.properties.total_votes || 0;
+
+                const fillColor = (total > 0 && candidates[winnerId])
+                    ? candidates[winnerId].color
+                    : defaultColor;
+
+                return {
+                    fillColor: fillColor,
+                    fillOpacity: 0.88,
+                    weight: 1.5,
+                    opacity: 0.9,
+                    color: '#30363d'
+                };
+            }
+        }
+
+        // 3. Hover interakce
+        function highlightFeature(e) {
+            const layer = e.target;
+            layer.setStyle({
+                weight: 3,
+                color: '#ffffff',
+                fillOpacity: currentMode === 'turnout' ? Math.max(0.3, layer.options.fillOpacity) : 1
+            });
+            layer.bringToFront();
+        }
+
+        function resetHighlight(e) {
+            geojsonLayer.resetStyle(e.target);
+        }
+
+        function onEachFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightFeature,
+                mouseout: resetHighlight
+            });
+
+            if (feature.properties) {
+                const okrsek = feature.properties.Cislo || "Neznámý";
+                const total = feature.properties.total_votes || 0;
+                const ucast = feature.properties.ucast_pct || 0;
+                const zapsani = feature.properties.zapsani || 0;
+                const vydane = feature.properties.vydane || 0;
+
+                let resultsHTML = '';
+
+                if (total > 0) {
+                    let results = feature.properties.results_json;
+                    if (typeof results === 'string') {
+                        try { results = JSON.parse(results); } catch(e) { results = {}; }
+                    } else if (!results) {
+                        results = {};
+                    }
+
+                    const sorted = Object.keys(results).sort((a,b) => results[b] - results[a]);
+
+                    sorted.forEach(id => {
+                        const votes = results[id];
+                        const pct = ((votes / total) * 100).toFixed(1);
+                        const isWinner = (id === sorted[0]) ? "winner" : "";
+                        const candInfo = candidates[id] || { name: `Kandidát ${id}`, color: defaultColor };
+
+                        resultsHTML += `
+                            <div class="popup-row ${isWinner}">
+                                <span>
+                                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${candInfo.color}; margin-right:5px;"></span>
+                                    ${candInfo.name}
+                                </span>
+                                <span>${pct} % (${votes})</span>
+                            </div>`;
+                    });
+                } else {
+                    resultsHTML = '<div class="popup-row">Okrsek zatím nesečten</div>';
+                }
+
+                const popupContent = `
+                    <div class="popup-header">Okrsek č. ${okrsek}</div>
+                    <div class="popup-meta">
+                        Účast: <span class="popup-turnout-highlight">${ucast} %</span> (${vydane} z ${zapsani})<br>
+                        Platných hlasů celkem: ${total}
+                    </div>
+                    ${resultsHTML}
+                `;
+                layer.bindPopup(popupContent);
+            }
+        }
+
+        // 4. Načtení GeoJSONu
+        fetch('obvod21_mapa.geojson')
+            .then(response => response.json())
+            .then(data => {
+                geojsonLayer = L.geoJSON(data, {
+                    style: style,
+                    onEachFeature: onEachFeature
+                }).addTo(map);
+
+                map.fitBounds(geojsonLayer.getBounds());
+            })
+            .catch(err => console.error("Chyba při načítání GeoJSON:", err));
+
+        // 5. Legenda (měnící se podle zobrazení)
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'legend');
+            this.update();
+            return this._div;
+        };
+
+        legend.update = function () {
+            if (currentMode === 'turnout') {
+                this._div.innerHTML = '<strong>Volební účast</strong>';
+                const grades = [10, 20, 30, 40, 50];
+                this._div.innerHTML += `
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.0); border-color:#555;"></i><span>0 % (bez barvy)</span></div>
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.25);"></i><span>25 %</span></div>
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.50);"></i><span>50 % (poloviční sytost)</span></div>
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.65);"></i><span>65 %+</span></div>
+                `;
+            } else {
+                this._div.innerHTML = '<strong>Vítěz v okrsku</strong>';
+                Object.keys(candidates).forEach(id => {
+                    const c = candidates[id];
+                    this._div.innerHTML += `
+                        <div class="legend-item">
+                            <i style="background: ${c.color}"></i>
+                            <span>${c.name}</span>
+                        </div>
+                    `;
+                });
+            }
+        };
+        legend.addTo(map);
+
+        // 6. Přepínání režimů
+        function switchMode(mode) {
+            if (currentMode === mode) return;
+            currentMode = mode;
+
+            document.getElementById('btn-winner').classList.toggle('active', mode === 'winner');
+            document.getElementById('btn-turnout').classList.toggle('active', mode === 'turnout');
+
+            document.getElementById('subtitle').textContent = mode === 'winner'
+                ? 'Vítězové jednotlivých okrsků'
+                : 'Volební účast v okrscích';
+
+            if (geojsonLayer) {
+                geojsonLayer.setStyle(style);
+            }
+            legend.update();
+        }
+    </script>
+</body>
+</html>
