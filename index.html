@@ -198,12 +198,13 @@
             if (currentMode === 'turnout') {
                 const ucast = feature.properties.ucast_pct || 0;
 
-                // 20 % = bez barvy (0 opacity), 50 % = plná sytost (1 opacity).
-                // Rozpětí 20–50 % rozprostře sytost na celý rozsah, takže jsou rozdíly
-                // v účasti lépe vidět (pod 20 % splývá, nad 50 % je plná barva).
-                const MIN_TURNOUT = 20;
-                const MAX_TURNOUT = 50;
-                const opacity = Math.min(1.0, Math.max(0.0, (ucast - MIN_TURNOUT) / (MAX_TURNOUT - MIN_TURNOUT)));
+                // 30 % = bez barvy (0 opacity), 60 % = 0.7 opacity (max. sytost).
+                // Rozpětí 30–60 % rozprostře sytost na celý rozsah, takže jsou rozdíly
+                // v účasti lépe vidět (pod 30 % splývá, nad 60 % je max. sytost).
+                const MIN_TURNOUT = 30;
+                const MAX_TURNOUT = 60;
+                const MAX_OPACITY = 0.7;
+                const opacity = Math.min(MAX_OPACITY, Math.max(0.0, MAX_OPACITY * (ucast - MIN_TURNOUT) / (MAX_TURNOUT - MIN_TURNOUT)));
 
                 return {
                     fillColor: '#58a6ff',
@@ -327,10 +328,10 @@
             if (currentMode === 'turnout') {
                 this._div.innerHTML = '<strong>Volební účast</strong>';
                 this._div.innerHTML += `
-                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.0); border-color:#555;"></i><span>20 % a méně</span></div>
-                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.33);"></i><span>30 %</span></div>
-                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.67);"></i><span>40 %</span></div>
-                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 1.0);"></i><span>50 % a více</span></div>
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.0); border-color:#555;"></i><span>30 % a méně</span></div>
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.23);"></i><span>40 %</span></div>
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.47);"></i><span>50 %</span></div>
+                    <div class="legend-item"><i style="background: rgba(88, 166, 255, 0.70);"></i><span>60 % a více</span></div>
                 `;
             } else {
                 this._div.innerHTML = '<strong>Vítěz v okrsku</strong>';
