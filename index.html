@@ -81,7 +81,47 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.4);
         }
 
-        #map { flex: 1; width: 100%; background: #010409; }
+        /* Rozložení obsahu: žebříček vlevo + mapa */
+        .content { flex: 1; display: flex; min-height: 0; }
+
+        #map { flex: 1; min-width: 0; background: #010409; }
+
+        /* Žebříček okrsků podle volební účasti */
+        .leaderboard {
+            width: 265px;
+            flex-shrink: 0;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            display: none;
+        }
+        .leaderboard.visible { display: block; }
+        .leaderboard h2 {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            padding: 0.8rem 0.9rem 0.6rem;
+            position: sticky;
+            top: 0;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            margin: 0;
+        }
+        .leaderboard-list { list-style: none; padding: 0.4rem; }
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.15s ease;
+        }
+        .leaderboard-item:hover { background: rgba(255, 255, 255, 0.06); }
+        .leaderboard-item.active { background: rgba(88, 166, 255, 0.22); }
+        .leaderboard-rank { color: #8b949e; width: 2.2em; flex-shrink: 0; text-align: right; }
+        .leaderboard-name { flex: 1; color: var(--text-main); }
+        .leaderboard-value { color: var(--color-turnout); font-weight: 600; }
 
         /* Vzhled popup oken */
         .leaflet-popup-content-wrapper {
@@ -163,7 +203,13 @@
         </div>
     </header>
 
-    <main id="map" role="main" aria-label="Mapa volebních okrsků"></main>
+    <div class="content">
+        <aside id="leaderboard" class="leaderboard" aria-label="Žebříček okrsků podle volební účasti">
+            <h2>Volební účast – žebříček</h2>
+            <ol id="leaderboard-list" class="leaderboard-list"></ol>
+        </aside>
+        <main id="map" role="main" aria-label="Mapa volebních okrsků"></main>
+    </div>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -182,6 +228,8 @@
         const defaultColor = "#6e7681";
         let currentMode = 'winner'; // 'winner' nebo 'turnout'
         let geojsonLayer;
+        let selectedLayer = null;   // okrsek zvýrazněný z žebříčku
+        let selectedItemEl = null;  // aktivní položka žebříčku
 
         // 1. Inicializace mapy (Praha 5)
         const map = L.map('map', { zoomControl: false }).setView([50.05, 14.32], 12);
@@ -244,6 +292,8 @@
         }
 
         function resetHighlight(e) {
+            // Zvýraznění okrsku vybraného z žebříčku zachováme i po opuštění myši
+            if (e.target === selectedLayer) return;
             geojsonLayer.resetStyle(e.target);
         }
 
@@ -303,7 +353,56 @@
             }
         }
 
-        // 4. Načtení GeoJSONu
+        // 4. Žebříček okrsků podle volební účasti (kliknutím zvýrazníme okrsek na mapě)
+        function selectOkrsek(layer, itemEl) {
+            if (selectedLayer) geojsonLayer.resetStyle(selectedLayer);
+            if (selectedItemEl) selectedItemEl.classList.remove('active');
+
+            selectedLayer = layer;
+            selectedItemEl = itemEl || null;
+            if (selectedItemEl) selectedItemEl.classList.add('active');
+
+            layer.setStyle({
+                weight: 3,
+                color: '#ffffff',
+                fillOpacity: currentMode === 'turnout' ? Math.max(0.3, layer.options.fillOpacity) : 1
+            });
+            layer.bringToFront();
+
+            map.fitBounds(layer.getBounds().pad(0.25), { maxZoom: 15 });
+            layer.openPopup();
+        }
+
+        function buildLeaderboard() {
+            const entries = [];
+            geojsonLayer.eachLayer(layer => {
+                const p = layer.feature.properties || {};
+                if ((p.zapsani || 0) > 0) {
+                    entries.push({
+                        layer: layer,
+                        cislo: p.Cislo,
+                        ucast: p.ucast_pct || 0
+                    });
+                }
+            });
+            entries.sort((a, b) => b.ucast - a.ucast);
+
+            const list = document.getElementById('leaderboard-list');
+            list.innerHTML = '';
+            entries.forEach((entry, i) => {
+                const li = document.createElement('li');
+                li.className = 'leaderboard-item';
+                li.innerHTML = `
+                    <span class="leaderboard-rank">${i + 1}.</span>
+                    <span class="leaderboard-name">Okrsek ${entry.cislo}</span>
+                    <span class="leaderboard-value">${entry.ucast.toFixed(1)} %</span>
+                `;
+                li.addEventListener('click', () => selectOkrsek(entry.layer, li));
+                list.appendChild(li);
+            });
+        }
+
+        // 5. Načtení GeoJSONu
         fetch('obvod21_mapa.geojson')
             .then(response => response.json())
             .then(data => {
@@ -313,10 +412,11 @@
                 }).addTo(map);
 
                 map.fitBounds(geojsonLayer.getBounds());
+                buildLeaderboard();
             })
             .catch(err => console.error("Chyba při načítání GeoJSON:", err));
 
-        // 5. Legenda (měnící se podle zobrazení)
+        // 6. Legenda (měnící se podle zobrazení)
         const legend = L.control({ position: 'bottomright' });
         legend.onAdd = function (map) {
             this._div = L.DomUtil.create('div', 'legend');
@@ -348,7 +448,7 @@
         };
         legend.addTo(map);
 
-        // 6. Přepínání režimů
+        // 7. Přepínání režimů
         function switchMode(mode) {
             if (currentMode === mode) return;
             currentMode = mode;
@@ -360,10 +460,18 @@
                 ? 'Vítězové jednotlivých okrsků'
                 : 'Volební účast v okrscích';
 
+            // Žebříček účasti zobrazíme jen v režimu volební účasti
+            document.getElementById('leaderboard').classList.toggle('visible', mode === 'turnout');
+
+            // Zrušíme výběr provedený z žebříčku
+            selectedLayer = null;
+            selectedItemEl = null;
+
             if (geojsonLayer) {
                 geojsonLayer.setStyle(style);
             }
             legend.update();
+            map.invalidateSize();
         }
     </script>
 </body>
